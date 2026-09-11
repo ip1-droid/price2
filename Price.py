@@ -3,8 +3,7 @@
 """
 ربات تلگرام برای قیمت‌ها - API تجو
 ✅ نسخه Railway (Environment Variables)
-✅ قیمت‌های ریالی (طلا، نقره، دلار، یورو)
-✅ بدون مشکل SSL
+✅ URL صحیح (بدون www)
 """
 
 import requests
@@ -26,7 +25,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ========== تنظیمات ==========
-# استفاده از Environment Variable برای Railway
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
@@ -46,10 +44,13 @@ VERIFY_SSL = False
 def get_tgju_prices():
     """
     دریافت قیمت‌های طلا، نقره، دلار و یورو از تجو
-    منبع: https://tgju.org/api/v1/latest
+    منبع: https://tgju.org/api/v1/latest (بدون www)
     """
     try:
+        # URL صحیح - بدون www
         url = "https://tgju.org/api/v1/latest"
+        
+        logger.info(f"🔍 درخواست API: {url}")
         
         response = requests.get(
             url,
@@ -58,6 +59,8 @@ def get_tgju_prices():
         )
         response.raise_for_status()
         data = response.json()
+        
+        logger.info("✅ API موفق بود")
         
         prices = {}
         
@@ -353,7 +356,7 @@ def send_about(chat_id):
     text = """ℹ️ *درباره این ربات*
 
 🤖 *ربات قیمت‌های لحظه‌ای*
-نسخه: 4.1 (Railway)
+نسخه: 4.2 (Railway - Fixed)
 
 ✨ ویژگی‌ها:
 • ✅ قیمت لحظه‌ای طلا و نقره
@@ -386,7 +389,6 @@ def main():
     print("🇮🇷 منبع: TGJU.ORG")
     print("🔒 SSL/TLS: ثابت‌شده")
     print("=" * 60)
-    print("برای متوقف کردن Ctrl+C را فشار دهید\n")
     
     error_count = 0
     max_errors = 20
@@ -435,3 +437,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+                
