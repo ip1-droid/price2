@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 ربات تلگرام برای قیمت‌های واقعی و لحظه‌ای
-✅ API‌های واقعی
+✅ API‌های واقعی (Metals Live + Open Exchange Rates)
 ✅ قیمت‌های لحظه‌ای
-✅ قیمت‌های ریالی (تبدیل خودکار)
-✅ هیچ mock data نیست
+✅ تبدیل خودکار به ریال
 """
 
 import requests
@@ -16,51 +15,34 @@ import os
 from datetime import datetime
 from urllib3.exceptions import InsecureRequestWarning
 
-# غیرفعال کردن هشدار SSL
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-# تنظیمات logging
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ========== تنظیمات ==========
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 if not BOT_TOKEN:
-    logger.error("❌ خطا: BOT_TOKEN تنظیم نشده است!")
+    logger.error("BOT_TOKEN required!")
     exit(1)
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 UPDATE_OFFSET = 0
-
 REQUESTS_TIMEOUT = 15
 VERIFY_SSL = False
 
-# ========== API‌های واقعی ==========
+# ========== API Functions ==========
 
 def get_metals_prices():
-    """
-    دریافت قیمت‌های طلا و نقره از Metals Live
-    قیمت‌ها بر اساس USD/troy oz
-    """
+    """Get gold and silver prices from Metals Live"""
     try:
         url = "https://api.metals.live/v1/spot/metals?currency=USD"
-        
-        response = requests.get(
-            url,
-            timeout=REQUESTS_TIMEOUT,
-            verify=VERIFY_SSL,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
+        response = requests.get(url, timeout=REQUESTS_TIMEOUT, verify=VERIFY_SSL, headers={'User-Agent': 'Mozilla/5.0'})
         
         if response.status_code == 200:
             data = response.json()
-            
-            # تبدیل troy oz به گرم
-            # 1 troy oz = 31.1035 گرم
             gold_per_gram = data.get('gold', 0) / 31.1035
             silver_per_gram = data.get('silver', 0) / 31.1035
             
@@ -70,24 +52,15 @@ def get_metals_prices():
                 'source': 'Metals Live'
             }
     except Exception as e:
-        logger.error(f"❌ خطا در دریافت قیمت‌های فلزات: {e}")
+        logger.error(f"Metals error: {e}")
     
     return None
 
 def get_currency_rates():
-    """
-    دریافت نرخ‌های ارز از Open Exchange Rates
-    """
+    """Get currency rates"""
     try:
-        # API بدون کلید
         url = "https://open.er-api.com/v6/latest/USD"
-        
-        response = requests.get(
-            url,
-            timeout=REQUESTS_TIMEOUT,
-            verify=VERIFY_SSL,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
+        response = requests.get(url, timeout=REQUESTS_TIMEOUT, verify=VERIFY_SSL, headers={'User-Agent': 'Mozilla/5.0'})
         
         if response.status_code == 200:
             data = response.json()
@@ -96,95 +69,57 @@ def get_currency_rates():
             return {
                 'eur': rates.get('EUR', 0),
                 'gbp': rates.get('GBP', 0),
-                'jpy': rates.get('JPY', 0),
                 'source': 'Open Exchange Rates'
             }
     except Exception as e:
-        logger.error(f"❌ خطا در دریافت نرخ‌های ارز: {e}")
-    
-    # سعی کنید ExchangeRate.host استفاده کنید
-    try:
-        url = "https://api.exchangerate.host/latest?base=USD&symbols=EUR,GBP,JPY,IRR"
-        
-        response = requests.get(
-            url,
-            timeout=REQUESTS_TIMEOUT,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('success'):
-                rates = data.get('rates', {})
-                return {
-                    'eur': rates.get('EUR', 0),
-                    'gbp': rates.get('GBP', 0),
-                    'jpy': rates.get('JPY', 0),
-                    'irr': rates.get('IRR', 0),
-                    'source': 'ExchangeRate Host'
-                }
-    except Exception as e:
-        logger.error(f"❌ خطا در ExchangeRate Host: {e}")
+        logger.error(f"Rates error: {e}")
     
     return None
 
 def get_usd_to_irr():
-    """
-    دریافت نرخ دلار به ریال
-    """
+    """Get USD to IRR rate"""
     try:
-        # سعی کنید از API‌های مختلف دریافت کنید
         url = "https://api.exchangerate.host/latest?base=USD&symbols=IRR"
-        
-        response = requests.get(
-            url,
-            timeout=REQUESTS_TIMEOUT,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
+        response = requests.get(url, timeout=REQUESTS_TIMEOUT, headers={'User-Agent': 'Mozilla/5.0'})
         
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
-                irr_rate = data.get('rates', {}).get('IRR', None)
+                irr_rate = data.get('rates', {}).get('IRR')
                 if irr_rate:
                     return round(irr_rate, 2)
     except Exception as e:
-        logger.error(f"❌ خطا: {e}")
+        logger.error(f"IRR error: {e}")
     
     return None
 
 def get_all_prices_real():
-    """
-    دریافت تمام قیمت‌های واقعی و لحظه‌ای
-    """
+    """Get all real-time prices"""
     prices = {}
     
-    # دریافت قیمت‌های فلزات
     metals = get_metals_prices()
     if metals:
         prices['metals'] = metals
-        logger.info(f"✅ قیمت‌های فلزات: طلا ${metals['gold']}, نقره ${metals['silver']}")
+        logger.info(f"Gold: ${metals['gold']}, Silver: ${metals['silver']}")
     
-    # دریافت نرخ‌های ارز
     rates = get_currency_rates()
     if rates:
         prices['rates'] = rates
-        logger.info(f"✅ نرخ‌های ارز: EUR {rates['eur']}, GBP {rates['gbp']}")
+        logger.info(f"EUR: {rates['eur']}, GBP: {rates['gbp']}")
     
-    # نرخ دلار به ریال
     usd_to_irr = get_usd_to_irr()
     if usd_to_irr:
         prices['usd_to_irr'] = usd_to_irr
-        logger.info(f"✅ نرخ دلار: {usd_to_irr} تومان")
+        logger.info(f"USD to IRR: {usd_to_irr}")
     
     prices['updated'] = datetime.now().strftime('%H:%M:%S')
     
     return prices if prices else None
 
-# ========== API تلگرام ==========
+# ========== Telegram API ==========
 
 def send_message(chat_id, text, reply_markup=None):
-    """ارسال پیام"""
+    """Send message to user"""
     url = f"{TELEGRAM_API_URL}/sendMessage"
     
     payload = {
@@ -197,37 +132,27 @@ def send_message(chat_id, text, reply_markup=None):
         payload['reply_markup'] = json.dumps(reply_markup)
     
     try:
-        response = requests.post(
-            url,
-            json=payload,
-            timeout=REQUESTS_TIMEOUT,
-            verify=VERIFY_SSL
-        )
+        response = requests.post(url, json=payload, timeout=REQUESTS_TIMEOUT, verify=VERIFY_SSL)
         return response.status_code == 200
     except Exception as e:
-        logger.error(f"خطا در ارسال پیام: {e}")
+        logger.error(f"Send error: {e}")
         return False
 
 def get_updates(offset=0):
-    """دریافت پیام‌های جدید"""
+    """Get new messages"""
     url = f"{TELEGRAM_API_URL}/getUpdates"
     
     try:
-        response = requests.get(
-            url,
-            params={'offset': offset, 'timeout': 25},
-            timeout=35,
-            verify=VERIFY_SSL
-        )
+        response = requests.get(url, params={'offset': offset, 'timeout': 25}, timeout=35, verify=VERIFY_SSL)
         return response.json()
     except Exception as e:
-        logger.error(f"خطا در دریافت update‌ها: {e}")
+        logger.error(f"Get updates error: {e}")
         return {'ok': False}
 
-# ========== صفحه‌کلید ==========
+# ========== Keyboard ==========
 
 def get_keyboard():
-    """ایجاد صفحه‌کلید"""
+    """Create keyboard"""
     return {
         'keyboard': [
             [{'text': '💰 قیمت لحظه‌ای'}],
@@ -238,24 +163,24 @@ def get_keyboard():
         'resize_keyboard': True
     }
 
-# ========== توابع کمکی ==========
+# ========== Helpers ==========
 
 def format_price(price, unit='تومان'):
-    """قالب‌بندی قیمت"""
+    """Format price"""
     if isinstance(price, (int, float)):
         return f"{int(price):,} {unit}"
     return "N/A"
 
-# ========== پیام‌های ربات ==========
+# ========== Message Handlers ==========
 
 def handle_message(message):
-    """پردازش پیام‌های دریافتی"""
+    """Handle user message"""
     chat_id = message['chat']['id']
     text = message.get('text', '').strip()
     
-    logger.info(f"پیام: {text}")
+    logger.info(f"Message: {text}")
     
-    if text == '/start' or text == '/help':
+    if text in ['/start', '/help']:
         send_start(chat_id)
     elif text == '💰 قیمت لحظه‌ای':
         send_all_prices(chat_id)
@@ -273,7 +198,7 @@ def handle_message(message):
         send_message(chat_id, "لطفاً از دکمه‌های موجود استفاده کنید.", get_keyboard())
 
 def send_start(chat_id):
-    """دستور شروع"""
+    """Start command"""
     text = """🤖 به ربات قیمت‌های لحظه‌ای خوش آمدید!
 
 ✨ *قیمت‌های واقعی و لحظه‌ای:*
@@ -283,53 +208,39 @@ def send_start(chat_id):
 • 💵 دلار
 • 💶 یورو
 
-📡 منابع: Metals Live, Open Exchange Rates
-
 از دکمه‌های زیر استفاده کنید:"""
     
     send_message(chat_id, text, get_keyboard())
 
 def send_all_prices(chat_id):
-    """نمایش تمام قیمت‌ها"""
+    """Show all prices"""
     prices = get_all_prices_real()
     
     if not prices:
-        send_message(chat_id, "❌ متأسفانه نتوانستم قیمت‌ها را دریافت کنم.\n\nلطفاً دوباره تلاش کنید.", get_keyboard())
+        send_message(chat_id, "❌ نتوانستم قیمت‌ها را دریافت کنم.\n\nلطفاً دوباره تلاش کنید.", get_keyboard())
         return
     
     text = "📊 *قیمت‌های لحظه‌ای*\n\n"
     
-    # طلا
     if 'metals' in prices:
         metals = prices['metals']
-        text += f"🥇 *طلا:*\n"
-        text += f"   💰 ${metals['gold']}/گرم (USD)\n"
+        text += f"🥇 *طلا:*\n   💰 ${metals['gold']}/گرم (USD)\n"
+        text += f"🥈 *نقره:*\n   💰 ${metals['silver']}/گرم (USD)\n\n"
     
-    # نقره
-    if 'metals' in prices:
-        metals = prices['metals']
-        text += f"🥈 *نقره:*\n"
-        text += f"   💰 ${metals['silver']}/گرم (USD)\n\n"
-    
-    # دلار
     if 'usd_to_irr' in prices:
-        text += f"💵 *دلار (USD):*\n"
-        text += f"   💰 {format_price(prices['usd_to_irr'])}\n\n"
+        text += f"💵 *دلار (USD):*\n   💰 {format_price(prices['usd_to_irr'])}\n\n"
     
-    # یورو
     if 'rates' in prices and 'eur' in prices['rates']:
         eur_rate = prices['rates']['eur']
         eur_to_irr = prices.get('usd_to_irr', 0) * eur_rate
-        text += f"💶 *یورو (EUR):*\n"
-        text += f"   💰 {format_price(eur_to_irr)}\n\n"
+        text += f"💶 *یورو (EUR):*\n   💰 {format_price(eur_to_irr)}\n\n"
     
-    text += f"🕐 *آپدیت:* {prices['updated']}\n"
-    text += f"📡 *منابع:* Metals Live, Open Exchange Rates"
+    text += f"🕐 *آپدیت:* {prices['updated']}"
     
     send_message(chat_id, text, get_keyboard())
 
 def send_gold(chat_id):
-    """نمایش قیمت طلا"""
+    """Show gold price"""
     prices = get_all_prices_real()
     
     if not prices or 'metals' not in prices:
@@ -339,10 +250,7 @@ def send_gold(chat_id):
     metals = prices['metals']
     gold_price = metals['gold']
     
-    # تبدیل به ریال اگر نرخ دلار موجود باشد
-    text = f"""🥇 *قیمت طلا*
-
-💰 *قیمت:* ${gold_price}/گرم (USD)"""
+    text = f"🥇 *قیمت طلا*\n\n💰 *قیمت:* ${gold_price}/گرم (USD)"
     
     if 'usd_to_irr' in prices:
         gold_in_irr = gold_price * prices['usd_to_irr']
@@ -353,7 +261,7 @@ def send_gold(chat_id):
     send_message(chat_id, text, get_keyboard())
 
 def send_silver(chat_id):
-    """نمایش قیمت نقره"""
+    """Show silver price"""
     prices = get_all_prices_real()
     
     if not prices or 'metals' not in prices:
@@ -363,9 +271,7 @@ def send_silver(chat_id):
     metals = prices['metals']
     silver_price = metals['silver']
     
-    text = f"""🥈 *قیمت نقره*
-
-💰 *قیمت:* ${silver_price}/گرم (USD)"""
+    text = f"🥈 *قیمت نقره*\n\n💰 *قیمت:* ${silver_price}/گرم (USD)"
     
     if 'usd_to_irr' in prices:
         silver_in_irr = silver_price * prices['usd_to_irr']
@@ -376,7 +282,7 @@ def send_silver(chat_id):
     send_message(chat_id, text, get_keyboard())
 
 def send_usd(chat_id):
-    """نمایش قیمت دلار"""
+    """Show USD price"""
     prices = get_all_prices_real()
     
     if not prices or 'usd_to_irr' not in prices:
@@ -384,17 +290,12 @@ def send_usd(chat_id):
         return
     
     usd_price = prices['usd_to_irr']
-    
-    text = f"""💵 *قیمت دلار (USD)*
-
-💰 *قیمت:* {format_price(usd_price)}
-
-🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+    text = f"💵 *قیمت دلار (USD)*\n\n💰 *قیمت:* {format_price(usd_price)}\n\n🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     
     send_message(chat_id, text, get_keyboard())
 
 def send_eur(chat_id):
-    """نمایش قیمت یورو"""
+    """Show EUR price"""
     prices = get_all_prices_real()
     
     if not prices or 'rates' not in prices or 'eur' not in prices['rates']:
@@ -404,9 +305,7 @@ def send_eur(chat_id):
     eur_rate = prices['rates']['eur']
     eur_to_irr = prices.get('usd_to_irr', 0) * eur_rate if 'usd_to_irr' in prices else 0
     
-    text = f"""💶 *قیمت یورو (EUR)*
-
-💰 *نرخ تبدیل:* 1 EUR = {eur_rate:.4f} USD"""
+    text = f"💶 *قیمت یورو (EUR)*\n\n💰 *نرخ تبدیل:* 1 EUR = {eur_rate:.4f} USD"
     
     if eur_to_irr:
         text += f"\n💰 *قیمت ریالی:* {format_price(eur_to_irr)}"
@@ -416,52 +315,44 @@ def send_eur(chat_id):
     send_message(chat_id, text, get_keyboard())
 
 def send_about(chat_id):
-    """درباره ربات"""
+    """About bot"""
     text = """ℹ️ *درباره این ربات*
 
 🤖 *ربات قیمت‌های لحظه‌ای*
-نسخه: 6.0 (Real Prices)
+نسخه: 6.1 (Real Prices - Fixed)
 
 ✨ ویژگی‌ها:
 • ✅ قیمت‌های طلا و نقره (لحظه‌ای)
 • ✅ نرخ‌های ارز (لحظه‌ای)
 • ✅ تبدیل خودکار به ریال
 • ✅ اجرا در ابر (Railway)
-• ✅ بروز رسانی هر بار
 
 📊 منابع داده:
-• Metals Live API (طلا، نقره)
-• Open Exchange Rates (نرخ‌های ارز)
-
-🕐 *قیمت‌ها هر بار درخواست جدید می‌شوند*
+• Metals Live
+• Open Exchange Rates
 
 ⚠️ توجه:
-برای معاملات واقعی منابع رسمی را بررسی کنید."""
+قیمت‌ها برای اطلاع است."""
     
     send_message(chat_id, text, get_keyboard())
 
-# ========== حلقه اصلی ==========
+# ========== Main Loop ==========
 
 def main():
-    """برنامه اصلی"""
+    """Main function"""
     global UPDATE_OFFSET
     
     print("=" * 70)
-    print("✅ ربات قیمت‌های لحظه‌ای (API واقعی) در حال اجرا است...")
-    print("☁️  میزبان: Railway.app")
-    print("🌍 منابع: Metals Live, Open Exchange Rates")
+    print("✅ Bot running with real-time prices...")
     print("=" * 70)
     
     error_count = 0
     max_errors = 20
     
-    # تست اولیه
-    logger.info("🔍 تست اتصال API‌ها...")
+    logger.info("Testing APIs...")
     test_prices = get_all_prices_real()
     if test_prices:
-        logger.info("✅ تمام API‌ها در دسترس هستند!")
-    else:
-        logger.warning("⚠️ برخی API‌ها موجود نیستند. ربات ادامه می‌دهد...")
+        logger.info("✅ All APIs working!")
     
     try:
         while True:
@@ -482,40 +373,20 @@ def main():
             
             except requests.exceptions.ConnectionError:
                 error_count += 1
-                logger.warning(f"⚠️ خطای اتصال ({error_count}/{max_errors})")
+                logger.warning(f"Connection error ({error_count}/{max_errors})")
                 time.sleep(5)
             
             except Exception as e:
                 error_count += 1
-                logger.error(f"❌ خطا ({error_count}/{max_errors}): {str(e)[:50]}...")
+                logger.error(f"Error ({error_count}/{max_errors}): {str(e)[:50]}")
                 time.sleep(5)
             
             if error_count >= max_errors:
-                logger.error(f"❌ بیش از {max_errors} خطا")
+                logger.error(f"Too many errors")
                 break
     
     except KeyboardInterrupt:
-        print("\n\n👋 ربات متوقف شد.")
+        print("\n\nBot stopped.")
 
 if __name__ == '__main__':
     main()
-nError as e:
-                error_count += 1
-                logger.warning(f"⚠️ خطای اتصال ({error_count}/{max_errors})")
-                time.sleep(5)
-            
-            except Exception as e:
-                error_count += 1
-                logger.error(f"❌ خطا ({error_count}/{max_errors}): {str(e)[:50]}...")
-                time.sleep(5)
-            
-            if error_count >= max_errors:
-                logger.error(f"❌ بیش از {max_errors} خطا رخ داد.")
-                break
-    
-    except KeyboardInterrupt:
-        print("\n\n👋 ربات متوقف شد.")
-
-if __name__ == '__main__':
-    main()
-        
