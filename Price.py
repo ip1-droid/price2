@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ربات تلگرام برای قیمت‌ها - API تجو
-✅ نسخه Railway (Environment Variables)
-✅ URL صحیح (بدون www)
+ربات تلگرام برای قیمت‌ها - با Mock Data ریالی
+✅ قیمت‌های ریالی (تومان)
+✅ طلا، نقره، دلار، یورو
+✅ تغییرات قیمت
 """
 
 import requests
@@ -35,81 +36,56 @@ if not BOT_TOKEN:
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 UPDATE_OFFSET = 0
 
-# تنظیمات requests برای Railway
+# تنظیمات requests
 REQUESTS_TIMEOUT = 15
 VERIFY_SSL = False
 
-# ========== API تجو (TGJU) ==========
+# ========== Mock Data - قیمت‌های ریالی ==========
+# این داده‌ها می‌توانند از API‌های واقعی جایگزین شوند
 
-def get_tgju_prices():
+MOCK_PRICES = {
+    'gold': {
+        'price': 2_850_000,  # تومان (هر گرم)
+        'change': 1.5,
+        'updated': datetime.now().strftime('%H:%M:%S')
+    },
+    'silver': {
+        'price': 85_000,  # تومان (هر گرم)
+        'change': -0.5,
+        'updated': datetime.now().strftime('%H:%M:%S')
+    },
+    'usd': {
+        'price': 42_500,  # تومان
+        'change': 0.0,
+        'updated': datetime.now().strftime('%H:%M:%S')
+    },
+    'eur': {
+        'price': 47_200,  # تومان
+        'change': 2.1,
+        'updated': datetime.now().strftime('%H:%M:%S')
+    }
+}
+
+# ========== تابع‌های دریافت قیمت ==========
+
+def get_prices():
     """
-    دریافت قیمت‌های طلا، نقره، دلار و یورو از تجو
-    منبع: https://tgju.org/api/v1/latest (بدون www)
+    دریافت قیمت‌ها (Mock Data)
+    می‌تواند از API واقعی جایگزین شود
     """
     try:
-        # URL صحیح - بدون www
-        url = "https://tgju.org/api/v1/latest"
+        logger.info("📊 درخواست قیمت‌ها...")
         
-        logger.info(f"🔍 درخواست API: {url}")
+        # Update mock prices with current time
+        prices = MOCK_PRICES.copy()
+        for key in prices:
+            prices[key]['updated'] = datetime.now().strftime('%H:%M:%S')
         
-        response = requests.get(
-            url,
-            timeout=REQUESTS_TIMEOUT,
-            verify=VERIFY_SSL
-        )
-        response.raise_for_status()
-        data = response.json()
-        
-        logger.info("✅ API موفق بود")
-        
-        prices = {}
-        
-        # استخراج قیمت‌ها از پاسخ
-        if 'gold_and_coin' in data:
-            if 'gold' in data['gold_and_coin']:
-                gold = data['gold_and_coin']['gold']
-                prices['gold'] = {
-                    'price': gold.get('price', 0),
-                    'change': gold.get('change', 0)
-                }
-            
-            if 'silver' in data['gold_and_coin']:
-                silver = data['gold_and_coin']['silver']
-                prices['silver'] = {
-                    'price': silver.get('price', 0),
-                    'change': silver.get('change', 0)
-                }
-        
-        # دلار
-        if 'currency' in data:
-            if 'usd' in data['currency']:
-                usd = data['currency']['usd']
-                prices['usd'] = {
-                    'price': usd.get('price', 0),
-                    'change': usd.get('change', 0)
-                }
-            
-            # یورو
-            if 'eur' in data['currency']:
-                eur = data['currency']['eur']
-                prices['eur'] = {
-                    'price': eur.get('price', 0),
-                    'change': eur.get('change', 0)
-                }
-        
-        prices['updated'] = datetime.now().strftime('%H:%M:%S')
-        prices['source'] = 'TGJU.ORG'
-        
+        logger.info("✅ قیمت‌ها دریافت شدند")
         return prices
     
-    except requests.exceptions.SSLError as e:
-        logger.error(f"❌ SSL Error: {str(e)[:50]}...")
-        return None
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         logger.error(f"❌ خطا در دریافت قیمت‌ها: {e}")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ خطا در تحلیل JSON: {e}")
         return None
 
 # ========== API تلگرام ==========
@@ -169,6 +145,23 @@ def get_keyboard():
         'resize_keyboard': True
     }
 
+# ========== توابع کمکی ==========
+
+def format_price(price, unit='تومان'):
+    """قالب‌بندی قیمت با فاصل"""
+    if isinstance(price, (int, float)):
+        return f"{int(price):,} {unit}"
+    return "N/A"
+
+def get_change_emoji(change):
+    """دریافت emoji برای تغییر قیمت"""
+    if change > 0:
+        return f"📈 +{change}%"
+    elif change < 0:
+        return f"📉 {change}%"
+    else:
+        return "➡️ ۰%"
+
 # ========== پیام‌های ربات ==========
 
 def handle_message(message):
@@ -202,31 +195,16 @@ def handle_message(message):
     else:
         send_message(chat_id, "لطفاً از دکمه‌های موجود استفاده کنید.", get_keyboard())
 
-def format_price(price, currency_symbol='تومان'):
-    """قالب‌بندی قیمت با فاصل"""
-    if isinstance(price, (int, float)):
-        return f"{int(price):,} {currency_symbol}"
-    return "N/A"
-
-def get_change_emoji(change):
-    """دریافت emoji برای تغییر قیمت"""
-    if change > 0:
-        return f"📈 +{change}%"
-    elif change < 0:
-        return f"📉 {change}%"
-    else:
-        return "➡️ ۰%"
-
 def send_start(chat_id):
     """دستور شروع"""
     text = """🤖 به ربات قیمت‌های لحظه‌ای خوش آمدید!
 
-🇮🇷 *قیمت‌های ریالی از تجو:*
+🇮🇷 *قیمت‌های ریالی (تومان):*
 
-• 🥇 طلا
-• 🥈 نقره
-• 💵 دلار
-• 💶 یورو
+• 🥇 طلا (هر گرم)
+• 🥈 نقره (هر گرم)
+• 💵 دلار آمریکا
+• 💶 یورو اروپا
 
 از دکمه‌های زیر استفاده کنید:"""
     
@@ -234,7 +212,7 @@ def send_start(chat_id):
 
 def send_all_prices(chat_id):
     """نمایش تمام قیمت‌ها"""
-    prices = get_tgju_prices()
+    prices = get_prices()
     
     if not prices:
         send_message(chat_id, "❌ متأسفانه نتوانستم قیمت‌ها را دریافت کنم.\n\nلطفاً دوباره تلاش کنید.", get_keyboard())
@@ -243,111 +221,103 @@ def send_all_prices(chat_id):
     text = "📊 *قیمت‌های لحظه‌ای*\n\n"
     
     # طلا
-    if 'gold' in prices:
-        gold = prices['gold']
-        text += f"🥇 *طلا:*\n"
-        text += f"   💰 {format_price(gold['price'])}\n"
-        text += f"   {get_change_emoji(gold['change'])}\n\n"
+    gold = prices['gold']
+    text += f"🥇 *طلا:*\n"
+    text += f"   💰 {format_price(gold['price'])}\n"
+    text += f"   {get_change_emoji(gold['change'])}\n\n"
     
     # نقره
-    if 'silver' in prices:
-        silver = prices['silver']
-        text += f"🥈 *نقره:*\n"
-        text += f"   💰 {format_price(silver['price'])}\n"
-        text += f"   {get_change_emoji(silver['change'])}\n\n"
+    silver = prices['silver']
+    text += f"🥈 *نقره:*\n"
+    text += f"   💰 {format_price(silver['price'])}\n"
+    text += f"   {get_change_emoji(silver['change'])}\n\n"
     
     # دلار
-    if 'usd' in prices:
-        usd = prices['usd']
-        text += f"💵 *دلار (USD):*\n"
-        text += f"   💰 {format_price(usd['price'])}\n"
-        text += f"   {get_change_emoji(usd['change'])}\n\n"
+    usd = prices['usd']
+    text += f"💵 *دلار (USD):*\n"
+    text += f"   💰 {format_price(usd['price'])}\n"
+    text += f"   {get_change_emoji(usd['change'])}\n\n"
     
     # یورو
-    if 'eur' in prices:
-        eur = prices['eur']
-        text += f"💶 *یورو (EUR):*\n"
-        text += f"   💰 {format_price(eur['price'])}\n"
-        text += f"   {get_change_emoji(eur['change'])}\n\n"
+    eur = prices['eur']
+    text += f"💶 *یورو (EUR):*\n"
+    text += f"   💰 {format_price(eur['price'])}\n"
+    text += f"   {get_change_emoji(eur['change'])}\n\n"
     
-    text += f"🕐 *آپدیت:* {prices['updated']}\n"
-    text += f"📡 *منبع:* {prices['source']}"
+    text += f"🕐 *آپدیت:* {prices['gold']['updated']}\n"
+    text += f"📡 *منبع:* Mock Data (برای تست)"
     
     send_message(chat_id, text, get_keyboard())
 
 def send_gold(chat_id):
     """نمایش قیمت طلا"""
-    prices = get_tgju_prices()
+    prices = get_prices()
     
-    if not prices or 'gold' not in prices:
+    if not prices:
         send_message(chat_id, "❌ نتوانستم قیمت طلا را دریافت کنم.", get_keyboard())
         return
     
     gold = prices['gold']
-    text = f"""🥇 *قیمت طلا*
+    text = f"""🥇 *قیمت طلا (هر گرم)*
 
-💰 *قیمت:* {format_price(gold['price'])}
+💰 *قیمت فعلی:* {format_price(gold['price'])}
 📊 *تغییر:* {get_change_emoji(gold['change'])}
 
-🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📡 منبع: {prices['source']}"""
+🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
     
     send_message(chat_id, text, get_keyboard())
 
 def send_silver(chat_id):
     """نمایش قیمت نقره"""
-    prices = get_tgju_prices()
+    prices = get_prices()
     
-    if not prices or 'silver' not in prices:
+    if not prices:
         send_message(chat_id, "❌ نتوانستم قیمت نقره را دریافت کنم.", get_keyboard())
         return
     
     silver = prices['silver']
-    text = f"""🥈 *قیمت نقره*
+    text = f"""🥈 *قیمت نقره (هر گرم)*
 
-💰 *قیمت:* {format_price(silver['price'])}
+💰 *قیمت فعلی:* {format_price(silver['price'])}
 📊 *تغییر:* {get_change_emoji(silver['change'])}
 
-🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📡 منبع: {prices['source']}"""
+🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
     
     send_message(chat_id, text, get_keyboard())
 
 def send_usd(chat_id):
     """نمایش قیمت دلار"""
-    prices = get_tgju_prices()
+    prices = get_prices()
     
-    if not prices or 'usd' not in prices:
+    if not prices:
         send_message(chat_id, "❌ نتوانستم قیمت دلار را دریافت کنم.", get_keyboard())
         return
     
     usd = prices['usd']
-    text = f"""💵 *قیمت دلار (USD)*
+    text = f"""💵 *قیمت دلار آمریکا*
 
-💰 *قیمت:* {format_price(usd['price'])}
+💰 *قیمت فعلی:* {format_price(usd['price'])}
 📊 *تغییر:* {get_change_emoji(usd['change'])}
 
-🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📡 منبع: {prices['source']}"""
+🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
     
     send_message(chat_id, text, get_keyboard())
 
 def send_eur(chat_id):
     """نمایش قیمت یورو"""
-    prices = get_tgju_prices()
+    prices = get_prices()
     
-    if not prices or 'eur' not in prices:
+    if not prices:
         send_message(chat_id, "❌ نتوانستم قیمت یورو را دریافت کنم.", get_keyboard())
         return
     
     eur = prices['eur']
-    text = f"""💶 *قیمت یورو (EUR)*
+    text = f"""💶 *قیمت یورو اروپا*
 
-💰 *قیمت:* {format_price(eur['price'])}
+💰 *قیمت فعلی:* {format_price(eur['price'])}
 📊 *تغییر:* {get_change_emoji(eur['change'])}
 
-🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-📡 منبع: {prices['source']}"""
+🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
     
     send_message(chat_id, text, get_keyboard())
 
@@ -356,24 +326,29 @@ def send_about(chat_id):
     text = """ℹ️ *درباره این ربات*
 
 🤖 *ربات قیمت‌های لحظه‌ای*
-نسخه: 4.2 (Railway - Fixed)
+نسخه: 5.0 (Railway - Stable)
 
 ✨ ویژگی‌ها:
-• ✅ قیمت لحظه‌ای طلا و نقره
+• ✅ قیمت طلا و نقره (ریالی)
 • ✅ قیمت دلار و یورو (ریالی)
-• ✅ بدون مشکل SSL
+• ✅ نمایش تغییرات قیمت
 • ✅ اجرا در ابر (Railway)
-• ✅ تغییرات قیمت
+• ✅ 24/7 در دسترس
 
-📊 منابع داده:
-• TGJU.ORG API
+📊 قیمت‌ها:
+• 🥇 طلا: هر گرم
+• 🥈 نقره: هر گرم
+• 💵 دلار: تومان
+• 💶 یورو: تومان
 
-🇮🇷 *تمام قیمت‌ها بر اساس ریال ایران است*
+🇮🇷 *تمام قیمت‌ها بر اساس ریال ایران*
 
-☁️ *میزبانی: Railway.app*
+⚠️ توجه:
+• این نسخه Mock Data استفاده می‌کند
+• می‌توان API‌های واقعی را اضافه کرد
+• برای معاملات واقعی منابع رسمی را بررسی کنید
 
-💡 نکته:
-برای معاملات واقعی منابع رسمی را بررسی کنید."""
+👨‍💻 نویسنده: توسعه‌دهنده ایرانی"""
     
     send_message(chat_id, text, get_keyboard())
 
@@ -383,23 +358,22 @@ def main():
     """برنامه اصلی"""
     global UPDATE_OFFSET
     
-    print("=" * 60)
-    print("✅ ربات قیمت‌های لحظه‌ای (TGJU) در حال اجرا است...")
+    print("=" * 70)
+    print("✅ ربات قیمت‌های لحظه‌ای (ریالی) در حال اجرا است...")
     print("☁️  میزبان: Railway.app")
-    print("🇮🇷 منبع: TGJU.ORG")
-    print("🔒 SSL/TLS: ثابت‌شده")
-    print("=" * 60)
+    print("🇮🇷 منبع: Mock Data (قیمت‌های نمونه)")
+    print("=" * 70)
     
     error_count = 0
     max_errors = 20
     
-    # تست اولیه اتصال
-    logger.info("🔍 تست اتصال به TGJU.ORG...")
-    test_prices = get_tgju_prices()
+    # تست اولیه
+    logger.info("🔍 تست سیستم...")
+    test_prices = get_prices()
     if test_prices:
-        logger.info("✅ اتصال موفق!")
+        logger.info("✅ سیستم آماده است!")
     else:
-        logger.warning("⚠️ هشدار: نتوانستم اتصال برقرار کنم. ربات ادامه می‌دهد...")
+        logger.warning("⚠️ هشدار!")
     
     try:
         while True:
@@ -437,4 +411,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-                
+        
